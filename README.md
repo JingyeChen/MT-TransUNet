@@ -1,2 +1,3 @@
 # MT-TransUNet
-Code will be available soon ... 
+This is the code for the technical report "MT-TransUNet: Mediating Multi-Task Tokens in Transformers
+for Skin Lesion Segmentation and Classificatio". Paper Link: [].
