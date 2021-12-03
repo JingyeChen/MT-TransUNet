@@ -73,34 +73,33 @@ def trainer(args, model):
             model.train()
             images, labels, name = batch
 
-            images, labels = random_resize(args, images, labels)  # whether to random resize and send to the model?
+            images, labels = random_resize(args, images, labels)
 
             images = images.cuda()
             labels = labels.cuda().squeeze(1)
 
             optimizer.zero_grad()
-            lr = adjust_learning_rate(args, optimizer, iter_num)  # 这一行可以切换成warm up
+            lr = adjust_learning_rate(args, optimizer, iter_num)
             preds, dt_preds, cls_logits, attention_maps, ds_mask_logits = model(images)
             cls_label = name_list_to_cls_label(name, label_dic)
 
             ### attention loss
-            last_att_maps = attention_maps[0]  # 8 12 197 197  # 【3表示最后一层，0表示第一层】
-            last_att_maps = last_att_maps[:int(args.batch_size / 2), ...]  # 4 12 197 197
+            last_att_maps = attention_maps[0]
+            last_att_maps = last_att_maps[:int(args.batch_size / 2), ...]
             last_att_maps = torch.mean(last_att_maps, 1)[:, 0, 1:].view(int(args.batch_size / 2), 14, 14)  # 4 196
             labels_resize = torch.nn.functional.interpolate(labels.unsqueeze(1), size=(14, 14), mode='nearest')[
                             :int(args.batch_size / 2), ...]
-            labels_resize = labels_resize.squeeze(1)  # 4 14 14
+            labels_resize = labels_resize.squeeze(1)
             attention_loss = ((1 - labels_resize) * last_att_maps).sum()
 
             ### cls seg consistency loss
-            last_att_maps = attention_maps[-1]  # 8 12 197 197  # 【3表示最后一层，0表示第一层】  (这里用上所有map)
+            last_att_maps = attention_maps[-1]
             last_att_maps = torch.mean(last_att_maps, 1)[:, 0, 1:]  # 8 196
             last_att_maps = last_att_maps * (1 / (last_att_maps.sum() + 1e-3))
-            # preds_softmax = torch.softmax(preds, 1)  # 局部概率
             preds_resize = torch.nn.functional.interpolate(preds[:, 1, ...].unsqueeze(1), size=(14, 14),
                                                            mode='bilinear')  # 8 14 14
             preds_resize = preds_resize.squeeze(1).view(args.batch_size, -1)  # 8 196
-            preds_resize = torch.softmax(preds_resize, 1) # 两个softmax？
+            preds_resize = torch.softmax(preds_resize, 1)
             cs_loss = ((last_att_maps - preds_resize) * (last_att_maps - preds_resize)).sum()
 
             ### activate consistent loss
@@ -108,7 +107,7 @@ def trainer(args, model):
             preds_resize = torch.nn.functional.interpolate(preds_softmax[:, 1, ...].unsqueeze(1), size=(14, 14),
                                                            mode='bilinear')  # 8 14 14
             preds_resize = preds_resize.squeeze(1).view(args.batch_size, -1)  # 8 196
-            # preds_resize = torch.softmax(preds_resize, 1) # 两个softmax？
+            # preds_resize = torch.softmax(preds_resize, 1)
             ac_loss = - (last_att_maps * preds_resize).sum()
 
             ### deep supervision loss
@@ -121,15 +120,15 @@ def trainer(args, model):
             ### sdf seg dice loss
             with torch.no_grad():
                 gt_dis = compute_sdf(labels[:int(args.batch_size / 2)].cpu(
-                ).numpy(), dt_preds[:int(args.batch_size / 2), 0, ...].shape)  # gt的水平集函数
+                ).numpy(), dt_preds[:int(args.batch_size / 2), 0, ...].shape)
                 gt_dis = torch.from_numpy(gt_dis).float().cuda()
-            loss_sdf = mse_loss(dt_preds[:int(args.batch_size / 2), 0, ...], gt_dis)  # 水平集损失
+            loss_sdf = mse_loss(dt_preds[:int(args.batch_size / 2), 0, ...], gt_dis)
             loss_seg = ce_loss(
-                preds[:int(args.batch_size / 2), ...], labels[:int(args.batch_size / 2), ...].long())  # 分割损失
+                preds[:int(args.batch_size / 2), ...], labels[:int(args.batch_size / 2), ...].long())
             loss_label_smooth_ce_seg = label_smooth_ce_loss(preds[:int(args.batch_size / 2), ...],
                                                             labels[:int(args.batch_size / 2), ...].long())
             loss_seg_dice = dice_loss(
-                preds[:int(args.batch_size / 2), 0, :, :], labels[:int(args.batch_size / 2)] == 0)  # 分割损失
+                preds[:int(args.batch_size / 2), 0, :, :], labels[:int(args.batch_size / 2)] == 0)
             dis_to_mask = torch.sigmoid(-1500 * dt_preds)
 
             ### cls loss
@@ -137,7 +136,7 @@ def trainer(args, model):
 
             ### consistency loss
             consistency_loss = torch.mean(
-                (torch.cat((1 - dis_to_mask, dis_to_mask), 1) - preds) ** 2)  # mask是0到1，所以一定要sigmoid
+                (torch.cat((1 - dis_to_mask, dis_to_mask), 1) - preds) ** 2) 
 
             consistency_weight = get_current_consistency_weight(epoch)
 
